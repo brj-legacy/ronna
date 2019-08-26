@@ -1,0 +1,15 @@
+.idea/*
+.idea
+.idea/
+log/*
+temp/*
+temp
+app/config/local.neon
+app/config/package.neon
+!.gitignore
+!.htaccess
+!web.config
+*.iws
+/out/
+.idea_modules/
+.DS_Store

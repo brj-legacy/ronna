@@ -1,0 +1,65 @@
+body {
+	background: #435827;
+	color: #31411b;
+}
+
+a {
+	color: #31411b;
+}
+
+table {
+	border-width: 1px;
+	border-color: #31411b;
+	border-collapse: collapse;
+}
+
+td {
+	text-align: center;
+}
+
+th {
+	background-color: #91b85c;
+}
+
+textarea {
+	width: 500px;
+	height: 200px;
+	margin-top: 4px;
+	margin-bottom: 4px;
+}
+
+.header {
+	height: 150px;
+	background-position: center;
+	background-size: 100%;
+}
+
+.menu h2 {
+	font-size: 18pt;
+}
+
+.menu {
+	padding-top: 1em;
+	padding-bottom: 1em;
+	max-width: 200px !important;
+	background-color: #91b85c;
+}
+
+.menu ul {
+	margin: 1em 0;
+}
+
+.content {
+	background-color: #dfebcf;
+	text-align: justify;
+	padding-top: 1em;
+	padding-bottom: 1em;
+}
+
+.content h1 {
+	font-size: 24pt;
+}
+
+.footer {
+	background-color: #91b85c;
+}

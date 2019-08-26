@@ -1,0 +1,11 @@
+{block content}
+	<h1 n:block="title">Fotogalerie</h1>
+
+	<div>
+		{for $i = 1; $i <= 14; $i++}
+			<a href="{$basePath}/img/fotky/{$i}.jpg">
+				<img src="{$basePath}/img/fotky/{$i}_n.jpg" alt="Fotka Ronna">
+			</a>
+		{/for}
+	</div>
+{/block}

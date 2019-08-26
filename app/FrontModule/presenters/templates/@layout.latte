@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+
+	{block |strip}<title>{ifset title}{include title|stripHtml} | {/ifset}Ronna</title>{/block}
+
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+		  integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+	<link rel="stylesheet" href="{$basePath}/css/style.css">
+	<link rel="shortcut icon" href="{$basePath}/favicon.png" type="image/x-icon">
+	<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+			integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+			crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"
+			integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49"
+			crossorigin="anonymous"></script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+			integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+			crossorigin="anonymous"></script>
+	{block head}{/block}
+</head>
+
+<body>
+
+<div class="container">
+	<div class="row">
+		<div class="col header" style="background-image: url({$basePath}/img/hlavicka.jpg)"></div>
+	</div>
+	<div class="row">
+		<div class="col menu">
+			<h2>Obsah</h2>
+			<ul>
+				<li><a n:href="Homepage:default">Úvod</a></li>
+				<li><a n:href="Homepage:about">O&nbsp;místě</a></li>
+				<li><a n:href="Homepage:photo">Fotogalerie</a></li>
+				<li><a n:href="Homepage:forum">Názorové fórum</a></li>
+				<li><a n:href="Homepage:links">Odkazy a&nbsp;zdroje</a></li>
+			</ul>
+		</div>
+		<div class="col content">
+			<div n:foreach="$flashes as $flash" n:class="flash, $flash->type">
+				{$flash->message}
+			</div>
+			{include content}
+		</div>
+	</div>
+	<div class="row">
+		<div class="col footer">
+			© Ondřej Marek, 2014, provozuje <a href="http://baraja.cz">Baraja</a>.
+		</div>
+	</div>
+</div>
+
+</body>
+</html>
