@@ -10,43 +10,39 @@ use Baraja\PackageManager\Exception\PackageEntityDoesNotExistsException;
 use Nette\PhpGenerator\ClassType;
 use Nette\Utils\Finder;
 
-class Storage
+final class Storage
 {
 
-	/**
-	 * @var string
-	 */
+	/** @var string */
 	private $basePath;
+
 
 	public function __construct(string $basePath)
 	{
 		$this->basePath = $basePath;
 	}
 
+
 	/**
 	 * @internal
 	 * @return PackageDescriptorEntity
-	 * @throws PackageEntityDoesNotExistsException
-	 * @throws PackageDescriptorException
+	 * @throws PackageEntityDoesNotExistsException|PackageDescriptorException
 	 */
 	public function load(): PackageDescriptorEntity
 	{
-		static $cache;
-
-		if ($cache !== null) {
-			return $cache;
+		if (trim($path = $this->getPath()) === '' || filesize($path) < 10) {
+			PackageEntityDoesNotExistsException::packageDescriptionEntityDoesNotExist();
 		}
 
-		if (trim($this->getPath()) !== '' && filesize($this->getPath()) > 1) {
-			require_once $this->getPath();
+		require_once $path;
 
-			$cache = new \PackageDescriptorEntity();
-
-			return $cache;
+		if (\class_exists('\PackageDescriptorEntity') === false) {
+			PackageEntityDoesNotExistsException::packageDescriptionEntityDoesNotExist();
 		}
 
-		PackageEntityDoesNotExistsException::packageDescriptionEntityDoesNotExist();
+		return new \PackageDescriptorEntity();
 	}
+
 
 	/**
 	 * @internal
@@ -58,13 +54,11 @@ class Storage
 	{
 		$class = new ClassType('PackageDescriptorEntity');
 
-		$generatedDate = date('Y-m-d H:i:s');
-
 		$class->setFinal()
 			->setExtends(PackageDescriptorEntity::class)
 			->addComment('This is temp class of PackageDescriptorEntity' . "\n")
 			->addComment('@author Baraja PackageManager')
-			->addComment('@generated ' . $generatedDate);
+			->addComment('@generated ' . ($generatedDate = date('Y-m-d H:i:s')));
 
 		$class->addConstant('GENERATED', time())
 			->setVisibility('public')
@@ -109,15 +103,15 @@ class Storage
 		}
 	}
 
+
 	/**
 	 * @internal
 	 * Convert Nette SmartObject with private methods to Nette ArrayHash structure.
 	 * While converting call getters, so you get only properties which you can get.
 	 * Function supports recursive objects structure. Public properties will be included.
 	 *
-	 * @author Jan Barášek [2017-09-09]
-	 * @param object|mixed|mixed[][] $input
-	 * @return string[][]|mixed
+	 * @param mixed $input
+	 * @return mixed
 	 */
 	public function haystackToArray($input)
 	{
@@ -151,6 +145,7 @@ class Storage
 		return $return;
 	}
 
+
 	/**
 	 * @param int $ttl
 	 * @return string
@@ -160,52 +155,46 @@ class Storage
 	{
 		static $cache;
 
-		if ($cache !== null) {
-			return $cache;
+		if ($cache === null) {
+			$dir = $this->basePath . '/cache/baraja/packageDescriptor';
+			$cache = $dir . '/PackageDescriptorEntity.php';
+
+			try {
+				if (is_dir($dir) === false && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+					PackageDescriptorException::canNotCreateTempDir($dir);
+				}
+
+				if (is_file($cache) === false && !file_put_contents($cache, '') && !is_file($cache)) {
+					PackageDescriptorException::canNotCreateTempFile($cache);
+				}
+			} catch (PackageDescriptorException $e) {
+				if ($ttl > 0) {
+					$this->tryFixTemp($dir);
+
+					return $this->getPath($ttl - 1);
+				}
+
+				throw $e;
+			}
 		}
 
-		try {
-			$dir = $this->basePath . '/_packageDescriptor';
-
-			if (!is_dir($dir) && !@mkdir($dir, 0777, true) && !is_dir($dir)) {
-				PackageDescriptorException::canNotCreateTempDir($dir);
-			}
-
-			$file = $dir . '/PackageDescriptorEntity.php';
-
-			if (!is_file($file) && !@file_put_contents($file, '') && !is_file($file)) {
-				PackageDescriptorException::canNotCreateTempFile($file);
-			}
-
-			$cache = $file;
-
-			return $file;
-		} catch (PackageDescriptorException $e) {
-			if ($ttl > 0) {
-				$this->tryFixTemp();
-
-				return $this->getPath($ttl - 1);
-			}
-
-			throw $e;
-		}
+		return $cache;
 	}
 
+
 	/**
+	 * @param string $basePath
 	 * @return bool
 	 */
-	private function tryFixTemp(): bool
+	private function tryFixTemp(string $basePath): bool
 	{
-		$basePath = $this->basePath . '/_packageDescriptor';
-		/** @var string[] $finder */
-		$finder = Finder::find('*')->in($basePath);
-
-		foreach ($finder as $path => $value) {
+		foreach (Finder::find('*')->in($basePath) as $path => $value) {
 			@unlink($path);
 		}
 
 		return @rmdir($basePath);
 	}
+
 
 	/**
 	 * @param mixed|mixed[] $data
@@ -229,5 +218,4 @@ class Storage
 
 		return $data;
 	}
-
 }

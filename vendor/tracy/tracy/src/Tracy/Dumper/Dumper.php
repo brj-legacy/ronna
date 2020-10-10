@@ -227,11 +227,10 @@ class Dumper
 	 */
 	private function dumpVar(&$var, array $options, int $level = 0): string
 	{
-		if (method_exists(__CLASS__, $m = 'dump' . gettype($var))) {
-			return $this->$m($var, $options, $level);
-		} else {
-			return "<span>unknown type</span>\n";
+		if (!method_exists(__CLASS__, $m = 'dump' . explode(' ', gettype($var))[0])) {
+			$m = 'dumpResource'; // closed resource is 'unknown type' in PHP 7.1
 		}
+		return $this->$m($var, $options, $level);
 	}
 
 
@@ -272,12 +271,17 @@ class Dumper
 
 	private function dumpArray(&$var, array $options, int $level): string
 	{
+		static $marker;
+		if ($marker === null) {
+			$marker = uniqid("\x00", true);
+		}
+
 		$out = '<span class="tracy-dump-array">array</span> (';
 
 		if (empty($var)) {
 			return $out . ")\n";
 
-		} elseif (in_array($var, $options['parents'] ?? [], true)) {
+		} elseif (isset($var[$marker])) {
 			return $out . (count($var) - 1) . ") [ <i>RECURSION</i> ]\n";
 
 		} elseif (!$this->maxDepth || $level < $this->maxDepth) {
@@ -295,14 +299,23 @@ class Dumper
 
 			} else {
 				$out = $span . '>' . $out . count($var) . ")</span>\n" . '<div' . ($collapsed ? ' class="tracy-collapsed"' : '') . '>';
-				$options['parents'][] = $var;
-				foreach ($var as $k => &$v) {
-					$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]) ? self::HIDDEN_VALUE : null;
-					$out .= '<span class="tracy-dump-indent">   ' . str_repeat('|  ', $level) . '</span>'
+				try {
+					$var[$marker] = true;
+					foreach ($var as $k => &$v) {
+						if ($k === $marker) {
+							continue;
+						}
+						$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]);
+						$out .= '<span class="tracy-dump-indent">   ' . str_repeat('|  ', $level) . '</span>'
 						. '<span class="tracy-dump-key">' . Helpers::escapeHtml($this->encodeKey($k)) . '</span> => '
-						. ($hide ? $this->dumpString($hide) : $this->dumpVar($v, $options, $level + 1));
+						. ($hide
+							? Helpers::escapeHtml(self::hideValue($v)) . "\n"
+							: $this->dumpVar($v, $options, $level + 1)
+						);
+					}
+				} finally {
+					unset($var[$marker]);
 				}
-				array_pop($options['parents']);
 
 				return $out . '</div>';
 			}
@@ -361,10 +374,13 @@ class Dumper
 						$vis = ' <span class="tracy-dump-visibility">' . ($k[1] === '*' ? 'protected' : 'private') . '</span>';
 						$k = substr($k, strrpos($k, "\x00") + 1);
 					}
-					$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]) ? self::HIDDEN_VALUE : null;
+					$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]);
 					$out .= '<span class="tracy-dump-indent">   ' . str_repeat('|  ', $level) . '</span>'
 						. '<span class="tracy-dump-key">' . Helpers::escapeHtml($this->encodeKey($k)) . "</span>$vis => "
-						. ($hide ? $this->dumpString($hide) : $this->dumpVar($v, $options, $level + 1));
+						. ($hide
+							? Helpers::escapeHtml(self::hideValue($v)) . "\n"
+							: $this->dumpVar($v, $options, $level + 1)
+						);
 				}
 				array_pop($options['parents']);
 
@@ -380,7 +396,7 @@ class Dumper
 
 	private function dumpResource(&$var, array $options, int $level): string
 	{
-		$type = get_resource_type($var);
+		$type = is_resource($var) ? get_resource_type($var) : 'closed';
 		$out = '<span class="tracy-dump-resource">' . Helpers::escapeHtml($type) . ' resource</span> '
 			. '<span class="tracy-dump-hash">#' . (int) $var . '</span>';
 		if (isset($this->resourceDumpers[$type])) {
@@ -412,16 +428,26 @@ class Dumper
 			return $this->encodeString($var, $this->maxLength);
 
 		} elseif (is_array($var)) {
-			if (count($var) && (($rec = in_array($var, $options['parents'] ?? [], true)) || $level >= $this->maxDepth)) {
-				return ['stop' => [count($var), $rec]];
+			static $marker;
+			if ($marker === null) {
+				$marker = uniqid("\x00", true);
+			}
+			if (count($var) && (isset($var[$marker]) || $level >= $this->maxDepth)) {
+				return ['stop' => [count($var) - isset($var[$marker]), isset($var[$marker])]];
 			}
 			$res = [];
-			$options['parents'][] = $var;
-			foreach ($var as $k => &$v) {
-				$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]);
-				$res[] = [$this->encodeKey($k), $hide ? self::HIDDEN_VALUE : $this->toJson($v, $options, $level + 1)];
+			try {
+				$var[$marker] = true;
+				foreach ($var as $k => &$v) {
+					if ($k === $marker) {
+						continue;
+					}
+					$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]);
+					$res[] = [$this->encodeKey($k), $hide ? ['type' => self::hideValue($v)] : $this->toJson($v, $options, $level + 1)];
+				}
+			} finally {
+				unset($var[$marker]);
 			}
-			array_pop($options['parents']);
 			return $res;
 
 		} elseif (is_object($var)) {
@@ -456,16 +482,16 @@ class Dumper
 						$k = substr($k, strrpos($k, "\x00") + 1);
 					}
 					$hide = is_string($k) && isset($this->keysToHide[strtolower($k)]);
-					$obj['items'][] = [$this->encodeKey($k), $hide ? self::HIDDEN_VALUE : $this->toJson($v, $options, $level + 1), $vis];
+					$obj['items'][] = [$this->encodeKey($k), $hide ? ['type' => self::hideValue($v)] : $this->toJson($v, $options, $level + 1), $vis];
 				}
 			}
 			return ['object' => $obj['id']];
 
-		} elseif (is_resource($var)) {
+		} else {
 			$obj = &$options[self::SNAPSHOT][(string) $var];
 			if (!$obj) {
-				$type = get_resource_type($var);
-				$obj = ['id' => count($options[self::SNAPSHOT]), 'name' => $type . ' resource', 'hash' => (int) $var];
+				$type = is_resource($var) ? get_resource_type($var) : 'closed';
+				$obj = ['id' => count($options[self::SNAPSHOT]), 'name' => $type . ' resource', 'hash' => (int) $var, 'items' => []];
 				if (isset($this->resourceDumpers[$type])) {
 					foreach (($this->resourceDumpers[$type])($var) as $k => $v) {
 						$obj['items'][] = [$k, $this->toJson($v, $options, $level + 1)];
@@ -473,9 +499,6 @@ class Dumper
 				}
 			}
 			return ['resource' => $obj['id']];
-
-		} else {
-			return ['type' => 'unknown type'];
 		}
 	}
 
@@ -498,43 +521,50 @@ class Dumper
 	 */
 	public static function encodeString(string $s, int $maxLength = null): string
 	{
-		static $table;
-		if ($table === null) {
-			foreach (array_merge(range("\x00", "\x1F"), range("\x7F", "\xFF")) as $ch) {
-				$table[$ch] = '\x' . str_pad(dechex(ord($ch)), 2, '0', STR_PAD_LEFT);
-			}
-			$table['\\'] = '\\\\';
-			$table["\r"] = '\r';
-			$table["\n"] = '\n';
-			$table["\t"] = '\t';
-		}
-
-		if ($maxLength && strlen($s) > $maxLength) { // shortens to $maxLength in UTF-8 or longer
-			if (function_exists('mb_substr')) {
-				$s = mb_substr($tmp = $s, 0, $maxLength, 'UTF-8');
-				$shortened = $s !== $tmp;
-			} else {
-				$i = $len = 0;
-				$maxI = $maxLength * 4; // max UTF-8 length
-				do {
-					if (($s[$i] < "\x80" || $s[$i] >= "\xC0") && (++$len > $maxLength) || $i >= $maxI) {
-						$s = substr($s, 0, $i);
-						$shortened = true;
-						break;
-					}
-				} while (isset($s[++$i]));
-			}
+		if ($maxLength) {
+			$s = self::truncateString($tmp = $s, $maxLength);
+			$shortened = $s !== $tmp;
 		}
 
 		if (preg_match('#[^\x09\x0A\x0D\x20-\x7E\xA0-\x{10FFFF}]#u', $s) || preg_last_error()) { // is binary?
-			if ($maxLength && strlen($s) > $maxLength) {
-				$s = substr($s, 0, $maxLength);
-				$shortened = true;
+			static $table;
+			if ($table === null) {
+				foreach (array_merge(range("\x00", "\x1F"), range("\x7F", "\xFF")) as $ch) {
+					$table[$ch] = '\x' . str_pad(dechex(ord($ch)), 2, '0', STR_PAD_LEFT);
+				}
+				$table['\\'] = '\\\\';
+				$table["\r"] = '\r';
+				$table["\n"] = '\n';
+				$table["\t"] = '\t';
 			}
+
 			$s = strtr($s, $table);
 		}
 
 		return $s . (empty($shortened) ? '' : ' ... ');
+	}
+
+
+	/**
+	 * @internal
+	 */
+	public static function truncateString(string $s, int $maxLength): string
+	{
+		if (!preg_match('##u', $s)) {
+			$s = substr($s, 0, $maxLength); // not UTF-8
+		} elseif (function_exists('mb_substr')) {
+			$s = mb_substr($s, 0, $maxLength, 'UTF-8');
+		} else {
+			$i = $len = 0;
+			while (isset($s[$i])) {
+				if (($s[$i] < "\x80" || $s[$i] >= "\xC0") && (++$len > $maxLength)) {
+					$s = substr($s, 0, $i);
+					break;
+				}
+				$i++;
+			}
+		}
+		return $s;
 	}
 
 
@@ -544,7 +574,7 @@ class Dumper
 	 */
 	private function encodeKey($key)
 	{
-		return is_int($key) || preg_match('#^[!\#$%&()*+,./0-9:;<=>?@A-Z[\]^_`a-z{|}~-]{1,50}$#D', $key)
+		return is_int($key) || (preg_match('#^[!\#$%&()*+,./0-9:;<=>?@A-Z[\]^_`a-z{|}~-]{1,50}$#D', $key) && !preg_match('#^true|false|null$#iD', $key))
 			? $key
 			: '"' . $this->encodeString($key, $this->maxLength) . '"';
 	}
@@ -616,6 +646,12 @@ class Dumper
 			}
 		}
 		return $info;
+	}
+
+
+	private static function hideValue($var): string
+	{
+		return self::HIDDEN_VALUE . ' (' . (is_object($var) ? Helpers::getClass($var) : gettype($var)) . ')';
 	}
 
 

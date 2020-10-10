@@ -27,26 +27,26 @@ class Filters
 
 
 	/**
-	 * Escapes string for use inside HTML.
+	 * Escapes string for use everywhere inside HTML (except for comments).
 	 * @param  mixed  $s  plain text
 	 * @return string HTML
 	 */
 	public static function escapeHtml($s): string
 	{
-		return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+		return htmlspecialchars((string) $s, ENT_QUOTES | ENT_HTML5 | ENT_SUBSTITUTE, 'UTF-8');
 	}
 
 
 	/**
-	 * Escapes string for use inside HTML.
-	 * @param  mixed  $s  plain text or IHtmlString
+	 * Escapes string for use inside HTML text.
+	 * @param  mixed  $s  plain text or HtmlStringable
 	 * @return string HTML
 	 */
 	public static function escapeHtmlText($s): string
 	{
-		return $s instanceof IHtmlString || $s instanceof \Nette\Utils\IHtmlString
+		return $s instanceof HtmlStringable || $s instanceof \Nette\Utils\IHtmlString
 			? $s->__toString(true)
-			: htmlspecialchars((string) $s, ENT_NOQUOTES, 'UTF-8');
+			: htmlspecialchars((string) $s, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}
 
 
@@ -57,12 +57,12 @@ class Filters
 	 */
 	public static function escapeHtmlAttr($s, bool $double = true): string
 	{
-		$double = $double && $s instanceof IHtmlString ? false : $double;
+		$double = $double && $s instanceof HtmlStringable ? false : $double;
 		$s = (string) $s;
 		if (strpos($s, '`') !== false && strpbrk($s, ' <>"\'') === false) {
 			$s .= ' '; // protection against innerHTML mXSS vulnerability nette/nette#1496
 		}
-		return htmlspecialchars($s, ENT_QUOTES, 'UTF-8', $double);
+		return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5 | ENT_SUBSTITUTE, 'UTF-8', $double);
 	}
 
 
@@ -92,7 +92,7 @@ class Filters
 
 
 	/**
-	 * Escapes string for use inside HTML comments.
+	 * Escapes string for use inside HTML/XML comments.
 	 * @param  string  $s  plain text
 	 * @return string HTML
 	 */
@@ -111,7 +111,7 @@ class Filters
 
 
 	/**
-	 * Escapes string for use inside XML 1.0 template.
+	 * Escapes string for use everywhere inside XML (except for comments).
 	 * @param  string  $s  plain text
 	 * @return string XML
 	 */
@@ -120,7 +120,8 @@ class Filters
 		// XML 1.0: \x09 \x0A \x0D and C1 allowed directly, C0 forbidden
 		// XML 1.1: \x00 forbidden directly and as a character reference,
 		//   \x09 \x0A \x0D \x85 allowed directly, C0, C1 and \x7F allowed as character references
-		return htmlspecialchars(preg_replace('#[\x00-\x08\x0B\x0C\x0E-\x1F]+#', '', (string) $s), ENT_QUOTES, 'UTF-8');
+		$s = preg_replace('#[\x00-\x08\x0B\x0C\x0E-\x1F]#', "\u{FFFD}", (string) $s);
+		return htmlspecialchars($s, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
 	}
 
 
@@ -157,16 +158,16 @@ class Filters
 	 */
 	public static function escapeJs($s): string
 	{
-		if ($s instanceof IHtmlString || $s instanceof \Nette\Utils\IHtmlString) {
+		if ($s instanceof HtmlStringable || $s instanceof \Nette\Utils\IHtmlString) {
 			$s = $s->__toString(true);
 		}
 
-		$json = json_encode($s, JSON_UNESCAPED_UNICODE);
+		$json = json_encode($s, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 		if ($error = json_last_error()) {
 			throw new \RuntimeException(json_last_error_msg(), $error);
 		}
 
-		return str_replace(["\u{2028}", "\u{2029}", ']]>', '<!'], ['\u2028', '\u2029', ']]\x3E', '\x3C!'], $json);
+		return str_replace([']]>', '<!', '</'], [']]\u003E', '\u003C!', '<\/'], $json);
 	}
 
 
@@ -177,7 +178,9 @@ class Filters
 	public static function escapeICal($s): string
 	{
 		// https://www.ietf.org/rfc/rfc5545.txt
-		return addcslashes(preg_replace('#[\x00-\x08\x0B\x0C-\x1F]+#', '', (string) $s), "\";\\,:\n");
+		$s = str_replace("\r", '', (string) $s);
+		$s = preg_replace('#[\x00-\x08\x0B-\x1F]#', "\u{FFFD}", (string) $s);
+		return addcslashes($s, "\";\\,:\n");
 	}
 
 
@@ -203,7 +206,7 @@ class Filters
 			trigger_error('Filter |stripHtml used with incompatible type ' . strtoupper($info->contentType), E_USER_WARNING);
 		}
 		$info->contentType = Engine::CONTENT_TEXT;
-		return html_entity_decode(strip_tags((string) $s), ENT_QUOTES, 'UTF-8');
+		return html_entity_decode(strip_tags((string) $s), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 	}
 
 
@@ -292,7 +295,7 @@ class Filters
 	public static function safeUrl($s): string
 	{
 		$s = (string) $s;
-		return preg_match('~^(?:(?:https?|ftp)://[^@]+(?:/.*)?|mailto:.+|[/?#].*|[^:]+)$~Di', $s) ? $s : '';
+		return preg_match('~^(?:(?:https?|ftp)://[^@]+(?:/.*)?|(?:mailto|tel|sms):.+|[/?#].*|[^:]+)$~Di', $s) ? $s : '';
 	}
 
 
@@ -312,18 +315,11 @@ class Filters
 	/**
 	 * Replaces all repeated white spaces with a single space.
 	 * @param  string  $s  HTML
-	 * @param  int  $phase  output buffering phase
 	 * @param  bool  $strip  stripping mode
 	 * @return string HTML
 	 */
-	public static function spacelessHtml(string $s, int $phase = null, bool &$strip = true): string
+	public static function spacelessHtml(string $s, bool &$strip = true): string
 	{
-		if ($phase & PHP_OUTPUT_HANDLER_START) {
-			$s = ltrim($s);
-		}
-		if ($phase & PHP_OUTPUT_HANDLER_FINAL) {
-			$s = rtrim($s);
-		}
 		return preg_replace_callback(
 			'#[ \t\r\n]+|<(/)?(textarea|pre|script)(?=\W)#si',
 			function ($m) use (&$strip) {
@@ -336,6 +332,29 @@ class Filters
 			},
 			$s
 		);
+	}
+
+
+	/**
+	 * Output buffering handler for spacelessHtml.
+	 */
+	public static function spacelessHtmlHandler(string $s, int $phase = null): string
+	{
+		static $strip;
+		$left = $right = '';
+
+		if ($phase & PHP_OUTPUT_HANDLER_START) {
+			$strip = true;
+			$tmp = ltrim($s);
+			$left = substr($s, 0, strlen($s) - strlen($tmp));
+			$s = $tmp;
+		}
+		if ($phase & PHP_OUTPUT_HANDLER_FINAL) {
+			$tmp = rtrim($s);
+			$right = substr($s, strlen($tmp));
+			$s = $tmp;
+		}
+		return $left . self::spacelessHtml($s, $strip) . $right;
 	}
 
 
@@ -369,6 +388,16 @@ class Filters
 			$s = preg_replace('#(?:^|[\r\n]+)(?=[^\r\n])#', '$0' . str_repeat($chars, $level), $s);
 		}
 		return $s;
+	}
+
+
+	/**
+	 * Join array of text or HTML elements with a string.
+	 * @return string text|HTML
+	 */
+	public static function implode(array $arr, string $glue = ''): string
+	{
+		return implode($glue, $arr);
 	}
 
 
@@ -472,7 +501,7 @@ class Filters
 	 */
 	public static function breaklines($s): Html
 	{
-		return new Html(nl2br(htmlspecialchars((string) $s, ENT_NOQUOTES, 'UTF-8'), self::$xhtml));
+		return new Html(nl2br(htmlspecialchars((string) $s, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'), self::$xhtml));
 	}
 
 
@@ -633,6 +662,32 @@ class Filters
 			return array_reverse(iterator_to_array($val), $preserveKeys);
 		} else {
 			return iconv('UTF-32LE', 'UTF-8', strrev(iconv('UTF-8', 'UTF-32BE', (string) $val)));
+		}
+	}
+
+
+	/**
+	 * Chunks items by returning an array of arrays with the given number of items.
+	 * @param  array|\Traversable  $list
+	 */
+	public static function batch($list, int $size, $rest = null): \Generator
+	{
+		$batch = [];
+		foreach ($list as $key => $value) {
+			$batch[$key] = $value;
+			if (count($batch) >= $size) {
+				yield $batch;
+				$batch = [];
+			}
+		}
+
+		if ($batch) {
+			if ($rest !== null) {
+				while (count($batch) < $size) {
+					$batch[] = $rest;
+				}
+			}
+			yield $batch;
 		}
 	}
 

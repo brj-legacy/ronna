@@ -22,7 +22,7 @@ class SmtpMailer implements Mailer
 	/** @var Signer|null */
 	private $signer;
 
-	/** @var resource */
+	/** @var resource|null */
 	private $connection;
 
 	/** @var string */
@@ -74,16 +74,14 @@ class SmtpMailer implements Mailer
 		if (isset($options['clientHost'])) {
 			$this->clientHost = $options['clientHost'];
 		} else {
-			$this->clientHost = isset($_SERVER['HTTP_HOST']) && preg_match('#^[\w.-]+\z#', $_SERVER['HTTP_HOST'])
+			$this->clientHost = isset($_SERVER['HTTP_HOST']) && preg_match('#^[\w.-]+$#D', $_SERVER['HTTP_HOST'])
 				? $_SERVER['HTTP_HOST']
 				: 'localhost';
 		}
 	}
 
 
-	/**
-	 * @return static
-	 */
+	/** @return static */
 	public function setSigner(Signer $signer): self
 	{
 		$this->signer = $signer;
@@ -157,13 +155,8 @@ class SmtpMailer implements Mailer
 		stream_set_timeout($this->connection, $this->timeout, 0);
 		$this->read(); // greeting
 
-		$this->write("EHLO $this->clientHost");
-		$ehloResponse = $this->read();
-		if ((int) $ehloResponse !== 250) {
-			$this->write("HELO $this->clientHost", 250);
-		}
-
 		if ($this->secure === 'tls') {
+			$this->write("EHLO $this->clientHost", 250);
 			$this->write('STARTTLS', 220);
 			if (!stream_socket_enable_crypto(
 				$this->connection,
@@ -172,7 +165,18 @@ class SmtpMailer implements Mailer
 			)) {
 				throw new SmtpException('Unable to connect via TLS.');
 			}
-			$this->write("EHLO $this->clientHost", 250);
+			$this->write("EHLO $this->clientHost");
+			$ehloResponse = $this->read();
+			if ((int) $ehloResponse !== 250) {
+				throw new SmtpException('SMTP server did not accept EHLO with error: ' . trim($response));
+			}
+
+		} else {
+			$this->write("EHLO $this->clientHost");
+			$ehloResponse = $this->read();
+			if ((int) $ehloResponse !== 250) {
+				$this->write("HELO $this->clientHost", 250);
+			}
 		}
 
 		if ($this->username != null && $this->password != null) {

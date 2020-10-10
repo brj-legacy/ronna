@@ -114,7 +114,11 @@ class Helpers
 					continue;
 				}
 			} else {
-				$item = ['op' => ($rule->isNegative ? '~' : '') . $op, 'msg' => Validator::formatMessage($rule, false)];
+				$msg = Validator::formatMessage($rule, false);
+				if ($msg instanceof Nette\Utils\IHtmlString) {
+					$msg = html_entity_decode(strip_tags((string) $msg), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+				}
+				$item = ['op' => ($rule->isNegative ? '~' : '') . $op, 'msg' => $msg];
 			}
 
 			if (is_array($rule->arg)) {
@@ -152,7 +156,7 @@ class Helpers
 			$res .= ($res === '' && $wrapperEnd === '' ? '' : $wrapper)
 				. $labelTag . $label->attributes() . '>'
 				. $inputTag . $input->attributes() . (Html::$xhtml ? ' />' : '>')
-				. ($caption instanceof Nette\Utils\IHtmlString ? $caption : htmlspecialchars($caption, ENT_NOQUOTES, 'UTF-8'))
+				. ($caption instanceof Nette\Utils\IHtmlString ? $caption : htmlspecialchars((string) $caption, ENT_NOQUOTES, 'UTF-8'))
 				. '</label>'
 				. $wrapperEnd;
 		}
@@ -203,18 +207,29 @@ class Helpers
 	{
 		$dynamic = [];
 		foreach ((array) $attrs as $k => $v) {
-			$p = str_split($k, strlen($k) - 1);
-			if ($p[1] === '?' || $p[1] === ':') {
-				unset($attrs[$k], $attrs[$p[0]]);
-				if ($p[1] === '?') {
-					$dynamic[$p[0]] = array_fill_keys((array) $v, true);
+			if ($k[-1] === '?' || $k[-1] === ':') {
+				$p = substr($k, 0, -1);
+				unset($attrs[$k], $attrs[$p]);
+				if ($k[-1] === '?') {
+					$dynamic[$p] = array_fill_keys((array) $v, true);
 				} elseif (is_array($v) && $v) {
-					$dynamic[$p[0]] = $v;
+					$dynamic[$p] = $v;
 				} else {
-					$attrs[$p[0]] = $v;
+					$attrs[$p] = $v;
 				}
 			}
 		}
 		return [$dynamic, '<' . $name . Html::el(null, $attrs)->attributes()];
+	}
+
+
+	/** @internal */
+	public static function iniGetSize(string $name): int
+	{
+		$value = ini_get($name);
+		$units = ['k' => 10, 'm' => 20, 'g' => 30];
+		return isset($units[$ch = strtolower(substr($value, -1))])
+			? (int) $value << $units[$ch]
+			: (int) $value;
 	}
 }

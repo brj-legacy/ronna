@@ -39,9 +39,10 @@ class DateTime extends \DateTime implements \JsonSerializable
 
 
 	/**
-	 * DateTime object factory.
+	 * Creates a DateTime object from a string, UNIX timestamp, or other DateTimeInterface object.
 	 * @param  string|int|\DateTimeInterface  $time
 	 * @return static
+	 * @throws \Exception if the date and time are not valid.
 	 */
 	public static function from($time)
 	{
@@ -55,7 +56,7 @@ class DateTime extends \DateTime implements \JsonSerializable
 			return (new static('@' . $time))->setTimezone(new \DateTimeZone(date_default_timezone_get()));
 
 		} else { // textual or null
-			return new static($time);
+			return new static((string) $time);
 		}
 	}
 
@@ -63,6 +64,7 @@ class DateTime extends \DateTime implements \JsonSerializable
 	/**
 	 * Creates DateTime object.
 	 * @return static
+	 * @throws Nette\InvalidArgumentException if the date and time are not valid.
 	 */
 	public static function fromParts(int $year, int $month, int $day, int $hour = 0, int $minute = 0, float $second = 0.0)
 	{
@@ -107,6 +109,9 @@ class DateTime extends \DateTime implements \JsonSerializable
 	}
 
 
+	/**
+	 * Returns the date and time in the format 'Y-m-d H:i:s'.
+	 */
 	public function __toString(): string
 	{
 		return $this->format('Y-m-d H:i:s');
@@ -114,6 +119,7 @@ class DateTime extends \DateTime implements \JsonSerializable
 
 
 	/**
+	 * Creates a copy with a modified time.
 	 * @return static
 	 */
 	public function modifyClone(string $modify = '')

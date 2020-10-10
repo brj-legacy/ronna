@@ -13,9 +13,8 @@ namespace Latte;
 /**
  * Template loader.
  */
-interface ILoader
+interface Loader
 {
-
 	/**
 	 * Returns template source code.
 	 */
@@ -36,3 +35,6 @@ interface ILoader
 	 */
 	function getUniqueId($name);
 }
+
+
+interface_exists(ILoader::class);

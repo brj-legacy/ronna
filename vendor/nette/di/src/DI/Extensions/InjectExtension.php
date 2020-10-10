@@ -44,7 +44,8 @@ final class InjectExtension extends DI\CompilerExtension
 
 	private function updateDefinition(Definitions\ServiceDefinition $def): void
 	{
-		$class = $def->getType();
+		$resolvedType = (new DI\Resolver($this->getContainerBuilder()))->resolveEntityType($def->getFactory());
+		$class = is_subclass_of($resolvedType, $def->getType()) ? $resolvedType : $def->getType();
 		$setups = $def->getSetup();
 
 		foreach (self::getInjectProperties($class) as $property => $type) {
@@ -61,7 +62,7 @@ final class InjectExtension extends DI\CompilerExtension
 			array_unshift($setups, $inject);
 		}
 
-		foreach (array_reverse(self::getInjectMethods($def->getType())) as $method) {
+		foreach (array_reverse(self::getInjectMethods($class)) as $method) {
 			$inject = new Definitions\Statement($method);
 			foreach ($setups as $key => $setup) {
 				if ($setup->getEntity() === $inject->getEntity()) {
@@ -82,18 +83,19 @@ final class InjectExtension extends DI\CompilerExtension
 	 */
 	public static function getInjectMethods(string $class): array
 	{
-		$res = [];
+		$classes = [];
 		foreach (get_class_methods($class) as $name) {
 			if (substr($name, 0, 6) === 'inject') {
-				$res[$name] = (new \ReflectionMethod($class, $name))->getDeclaringClass()->getName();
+				$classes[$name] = (new \ReflectionMethod($class, $name))->getDeclaringClass()->name;
 			}
 		}
-		uksort($res, function (string $a, string $b) use ($res): int {
-			return $res[$a] === $res[$b]
-				? strcmp($a, $b)
-				: (is_a($res[$a], $res[$b], true) ? 1 : -1);
+		$methods = array_keys($classes);
+		uksort($classes, function (string $a, string $b) use ($classes, $methods): int {
+			return $classes[$a] === $classes[$b]
+				? array_search($a, $methods, true) <=> array_search($b, $methods, true)
+				: (is_a($classes[$a], $classes[$b], true) ? 1 : -1);
 		});
-		return array_keys($res);
+		return array_keys($classes);
 	}
 
 
@@ -107,7 +109,8 @@ final class InjectExtension extends DI\CompilerExtension
 		foreach (get_class_vars($class) as $name => $foo) {
 			$rp = new \ReflectionProperty($class, $name);
 			if (DI\Helpers::parseAnnotation($rp, 'inject') !== null) {
-				if ($type = DI\Helpers::parseAnnotation($rp, 'var')) {
+				if ($type = Reflection::getPropertyType($rp)) {
+				} elseif ($type = DI\Helpers::parseAnnotation($rp, 'var')) {
 					$type = Reflection::expandClassName($type, Reflection::getPropertyDeclaringClass($rp));
 				}
 				$res[$name] = $type;
@@ -151,7 +154,7 @@ final class InjectExtension extends DI\CompilerExtension
 		} elseif (!class_exists($type) && !interface_exists($type)) {
 			throw new Nette\InvalidStateException("Class or interface '$type' used in @var annotation at $propName not found. Check annotation and 'use' statements.");
 		} elseif ($container && !$container->getByType($type, false)) {
-			throw new Nette\DI\MissingServiceException("Service of type $type used in @var annotation at $propName not found. Did you register it in configuration file?");
+			throw new Nette\DI\MissingServiceException("Service of type $type used in @var annotation at $propName not found. Did you add it to configuration file?");
 		}
 	}
 }

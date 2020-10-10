@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace Nette\Bridges\ApplicationTracy;
 
 use Nette;
-use Nette\Application\Routers;
 use Nette\Application\UI\Presenter;
+use Nette\Routing;
 use Tracy;
 
 
@@ -22,7 +22,7 @@ final class RoutingPanel implements Tracy\IBarPanel
 {
 	use Nette\SmartObject;
 
-	/** @var Nette\Routing\Router */
+	/** @var Routing\Router */
 	private $router;
 
 	/** @var Nette\Http\IRequest */
@@ -31,7 +31,7 @@ final class RoutingPanel implements Tracy\IBarPanel
 	/** @var Nette\Application\IPresenterFactory */
 	private $presenterFactory;
 
-	/** @var array */
+	/** @var \stdClass[] */
 	private $routers = [];
 
 	/** @var array|null */
@@ -55,7 +55,7 @@ final class RoutingPanel implements Tracy\IBarPanel
 	}
 
 
-	public function __construct(Nette\Routing\Router $router, Nette\Http\IRequest $httpRequest, Nette\Application\IPresenterFactory $presenterFactory)
+	public function __construct(Routing\Router $router, Nette\Http\IRequest $httpRequest, Nette\Application\IPresenterFactory $presenterFactory)
 	{
 		$this->router = $router;
 		$this->httpRequest = $httpRequest;
@@ -69,10 +69,10 @@ final class RoutingPanel implements Tracy\IBarPanel
 	public function getTab(): string
 	{
 		$this->analyse($this->router);
-		ob_start(function () {});
-		$matched = $this->matched;
-		require __DIR__ . '/templates/RoutingPanel.tab.phtml';
-		return ob_get_clean();
+		return Nette\Utils\Helpers::capture(function () {
+			$matched = $this->matched;
+			require __DIR__ . '/templates/RoutingPanel.tab.phtml';
+		});
 	}
 
 
@@ -81,26 +81,39 @@ final class RoutingPanel implements Tracy\IBarPanel
 	 */
 	public function getPanel(): string
 	{
-		ob_start(function () {});
-		$matched = $this->matched;
-		$routers = $this->routers;
-		$source = $this->source;
-		$hasModule = (bool) array_filter($routers, function (array $rq): string { return $rq['module']; });
-		$url = $this->httpRequest->getUrl();
-		$method = $this->httpRequest->getMethod();
-		require __DIR__ . '/templates/RoutingPanel.panel.phtml';
-		return ob_get_clean();
+		return Nette\Utils\Helpers::capture(function () {
+			$matched = $this->matched;
+			$routers = $this->routers;
+			$source = $this->source;
+			$hasModule = (bool) array_filter($routers, function (\stdClass $rq): string { return $rq->module; });
+			$url = $this->httpRequest->getUrl();
+			$method = $this->httpRequest->getMethod();
+			require __DIR__ . '/templates/RoutingPanel.panel.phtml';
+		});
 	}
 
 
 	/**
 	 * Analyses simple route.
 	 */
-	private function analyse(Nette\Routing\Router $router, string $module = ''): void
+	private function analyse(Routing\Router $router, string $module = '', bool $parentMatches = true, int $level = -1): void
 	{
-		if ($router instanceof Routers\RouteList) {
-			foreach ($router as $subRouter) {
-				$this->analyse($subRouter, $module . $router->getModule());
+		if ($router instanceof Routing\RouteList) {
+			try {
+				$parentMatches = $parentMatches && $router->match($this->httpRequest) !== null;
+			} catch (\Exception $e) {
+			}
+			$next = count($this->routers);
+			$parentModule = $module . ($router instanceof Nette\Application\Routers\RouteList ? $router->getModule() : '');
+			foreach ($router->getRouters() as $subRouter) {
+				$this->analyse($subRouter, $parentModule, $parentMatches, $level + 1);
+			}
+
+			if ($info = $this->routers[$next] ?? null) {
+				$info->gutterTop = abs(max(0, $level) - $info->level);
+			}
+			if ($info = end($this->routers)) {
+				$info->gutterBottom = abs(max(0, $level) - $info->level);
 			}
 			return;
 		}
@@ -108,8 +121,9 @@ final class RoutingPanel implements Tracy\IBarPanel
 		$matched = 'no';
 		$params = $e = null;
 		try {
-			$params = $router->match($this->httpRequest);
+			$params = $parentMatches ? $router->match($this->httpRequest) : null;
 		} catch (\Exception $e) {
+			$matched = 'error';
 		}
 		if ($params !== null) {
 			if ($module) {
@@ -123,11 +137,12 @@ final class RoutingPanel implements Tracy\IBarPanel
 			}
 		}
 
-		$this->routers[] = [
+		$this->routers[] = (object) [
+			'level' => max(0, $level),
 			'matched' => $matched,
 			'class' => get_class($router),
-			'defaults' => $router instanceof Routers\Route || $router instanceof Routers\SimpleRouter ? $router->getDefaults() : [],
-			'mask' => $router instanceof Routers\Route ? $router->getMask() : null,
+			'defaults' => $router instanceof Routing\Route || $router instanceof Routing\SimpleRouter ? $router->getDefaults() : [],
+			'mask' => $router instanceof Routing\Route ? $router->getMask() : null,
 			'params' => $params,
 			'module' => rtrim($module, ':'),
 			'error' => $e,

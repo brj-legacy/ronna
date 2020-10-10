@@ -62,6 +62,11 @@ class Environment
 		if (getenv(self::COVERAGE) && getenv(self::COVERAGE_ENGINE)) {
 			CodeCoverage\Collector::start(getenv(self::COVERAGE), getenv(self::COVERAGE_ENGINE));
 		}
+
+		if (getenv('TERMINAL_EMULATOR') === 'JetBrains-JediTerm') {
+			Dumper::$maxPathSegments = -1;
+			Dumper::$pathSeparator = '/';
+		}
 	}
 
 
@@ -72,9 +77,16 @@ class Environment
 	{
 		self::$useColors = getenv(self::COLORS) !== false
 			? (bool) getenv(self::COLORS)
-			: ((PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg')
-				&& ((function_exists('posix_isatty') && posix_isatty(STDOUT))
-					|| getenv('ConEmuANSI') === 'ON' || getenv('ANSICON') !== false) || getenv('TERM') === 'xterm-256color');
+			: (PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg')
+				&& (!function_exists('stream_isatty') || stream_isatty(STDOUT)) // PHP >= 7.2
+				&& getenv('NO_COLOR') === false
+				&& (defined('PHP_WINDOWS_VERSION_BUILD')
+					? (function_exists('sapi_windows_vt100_support') && sapi_windows_vt100_support(STDOUT))
+						|| getenv('ConEmuANSI') === 'ON' // ConEmu
+						|| getenv('ANSICON') !== false // ANSICON
+						|| getenv('term') === 'xterm' // MSYS
+						|| getenv('term') === 'xterm-256color' // MSYS
+					: (!function_exists('posix_isatty') || posix_isatty(STDOUT))); // PHP < 7.2
 
 		ob_start(function (string $s): string {
 			return self::$useColors ? $s : Dumper::removeColors($s);
@@ -106,7 +118,7 @@ class Environment
 
 			$error = error_get_last();
 			register_shutdown_function(function () use ($error): void {
-				if (in_array($error['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE], true)) {
+				if (in_array($error['type'] ?? null, [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE], true)) {
 					if (($error['type'] & error_reporting()) !== $error['type']) { // show fatal errors hidden by @shutup
 						self::removeOutputBuffers();
 						echo "\n", Dumper::color('white/red', "Fatal error: $error[message] in $error[file] on line $error[line]"), "\n";
@@ -166,8 +178,9 @@ class Environment
 	public static function getTestAnnotations(): array
 	{
 		$trace = debug_backtrace();
-		$file = $trace[count($trace) - 1]['file'];
-		return Helpers::parseDocComment(file_get_contents($file)) + ['file' => $file];
+		return ($file = $trace[count($trace) - 1]['file'] ?? null)
+			? Helpers::parseDocComment(file_get_contents($file)) + ['file' => $file]
+			: [];
 	}
 
 

@@ -141,7 +141,7 @@ class Message extends MimePart
 	 */
 	private function formatEmail(string $email, string $name = null): array
 	{
-		if (!$name && preg_match('#^(.+) +<(.*)>\z#', $email, $matches)) {
+		if (!$name && preg_match('#^(.+) +<(.*)>$#D', $email, $matches)) {
 			[, $name, $email] = $matches;
 			$name = stripslashes($name);
 			$tmp = substr($name, 1, -1);
@@ -179,7 +179,7 @@ class Message extends MimePart
 	 */
 	public function setPriority(int $priority)
 	{
-		$this->setHeader('X-Priority', $priority);
+		$this->setHeader('X-Priority', (string) $priority);
 		return $this;
 	}
 
@@ -208,7 +208,7 @@ class Message extends MimePart
 					|<body[^<>]*\s background\s*=\s*
 					|<[^<>]+\s style\s*=\s* ["\'][^"\'>]+[:\s] url\(
 					|<style[^>]*>[^<]+ [:\s] url\()
-					(["\']?)(?![a-z]+:|[/\\#])([^"\'>)\s]+)
+					(["\']?)(?![a-z]+:|[/\#])([^"\'>)\s]+)
 					|\[\[ ([\w()+./@~-]+) \]\]
 				#ix',
 				PREG_OFFSET_CAPTURE
@@ -227,7 +227,7 @@ class Message extends MimePart
 
 		if ($this->getSubject() == null) { // intentionally ==
 			$html = Strings::replace($html, '#<title>(.+?)</title>#is', function (array $m): void {
-				$this->setSubject(html_entity_decode($m[1], ENT_QUOTES, 'UTF-8'));
+				$this->setSubject(Nette\Utils\Html::htmlToText($m[1]));
 			});
 		}
 
@@ -293,14 +293,11 @@ class Message extends MimePart
 	/**
 	 * Creates file MIME part.
 	 */
-	private function createAttachment(string $file, string $content = null, string $contentType = null, string $disposition): MimePart
+	private function createAttachment(string $file, ?string $content, ?string $contentType, string $disposition): MimePart
 	{
 		$part = new MimePart;
 		if ($content === null) {
-			$content = @file_get_contents($file); // @ is escalated to exception
-			if ($content === false) {
-				throw new Nette\FileNotFoundException("Unable to read file '$file'.");
-			}
+			$content = Nette\Utils\FileSystem::read($file);
 		}
 		if (!$contentType) {
 			$contentType = finfo_buffer(finfo_open(FILEINFO_MIME_TYPE), $content);
@@ -384,14 +381,14 @@ class Message extends MimePart
 	 */
 	protected function buildText(string $html): string
 	{
-		$text = Strings::replace($html, [
-			'#<(style|script|head).*</\\1>#Uis' => '',
+		$html = Strings::replace($html, [
+			'#<(style|script|head).*</\1>#Uis' => '',
 			'#<t[dh][ >]#i' => ' $0',
 			'#<a\s[^>]*href=(?|"([^"]+)"|\'([^\']+)\')[^>]*>(.*?)</a>#is' => '$2 &lt;$1&gt;',
 			'#[\r\n]+#' => ' ',
 			'#<(/?p|/?h\d|li|br|/tr)[ >/]#i' => "\n$0",
 		]);
-		$text = html_entity_decode(strip_tags($text), ENT_QUOTES, 'UTF-8');
+		$text = Nette\Utils\Html::htmlToText($html);
 		$text = Strings::replace($text, '#[ \t]+#', ' ');
 		return trim($text);
 	}

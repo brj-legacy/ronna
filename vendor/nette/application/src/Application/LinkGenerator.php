@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Nette\Application;
 
 use Nette;
+use Nette\Http\UrlScript;
 use Nette\Routing\Router;
 
 
@@ -23,14 +24,14 @@ final class LinkGenerator
 	/** @var Router */
 	private $router;
 
-	/** @var Nette\Http\UrlScript */
+	/** @var UrlScript */
 	private $refUrl;
 
 	/** @var IPresenterFactory|null */
 	private $presenterFactory;
 
 
-	public function __construct(Router $router, Nette\Http\UrlScript $refUrl, IPresenterFactory $presenterFactory = null)
+	public function __construct(Router $router, UrlScript $refUrl, IPresenterFactory $presenterFactory = null)
 	{
 		$this->router = $router;
 		$this->refUrl = $refUrl;
@@ -45,7 +46,7 @@ final class LinkGenerator
 	 */
 	public function link(string $dest, array $params = []): string
 	{
-		if (!preg_match('~^([\w:]+):(\w*+)(#.*)?()\z~', $dest, $m)) {
+		if (!preg_match('~^([\w:]+):(\w*+)(#.*)?()$~D', $dest, $m)) {
 			throw new UI\InvalidLinkException("Invalid link destination '$dest'.");
 		}
 		[, $presenter, $action, $frag] = $m;
@@ -87,5 +88,15 @@ final class LinkGenerator
 			throw new UI\InvalidLinkException("No route for $dest($params)");
 		}
 		return $url . $frag;
+	}
+
+
+	public function withReferenceUrl(string $url): self
+	{
+		return new self(
+			$this->router,
+			new UrlScript($url),
+			$this->presenterFactory
+		);
 	}
 }

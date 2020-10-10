@@ -47,7 +47,10 @@ class Validator
 	];
 
 
-	/** @internal */
+	/**
+	 * @return string|Nette\Utils\IHtmlString
+	 * @internal
+	 */
 	public static function formatMessage(Rule $rule, bool $withValue = true)
 	{
 		$message = $rule->message;
@@ -65,13 +68,19 @@ class Validator
 			$message = $translator->translate($message, is_int($rule->arg) ? $rule->arg : null);
 		}
 
-		$message = preg_replace_callback('#%(name|label|value|\d+\$[ds]|[ds])#', function (array $m) use ($rule, $withValue) {
+		$message = preg_replace_callback('#%(name|label|value|\d+\$[ds]|[ds])#', function (array $m) use ($rule, $withValue, $translator) {
 			static $i = -1;
 			switch ($m[1]) {
 				case 'name': return $rule->control->getName();
-				case 'label': return $rule->control instanceof Controls\BaseControl
-					? rtrim($rule->control->translate($rule->control->getCaption()), ':')
-					: null;
+				case 'label':
+					if ($rule->control instanceof Controls\BaseControl) {
+						$caption = $rule->control->getCaption();
+						$caption = $caption instanceof Nette\Utils\IHtmlString
+							? $caption->getText()
+							: ($translator ? $translator->translate($caption) : $caption);
+						return rtrim((string) $caption, ':');
+					}
+					return '';
 				case 'value': return $withValue ? $rule->control->getValue() : $m[0];
 				default:
 					$args = is_array($rule->arg) ? $rule->arg : [$rule->arg];
@@ -253,7 +262,7 @@ class Validator
 	 */
 	public static function validatePattern(IControl $control, string $pattern, bool $caseInsensitive = false): bool
 	{
-		$regexp = "\x01^(?:$pattern)\\z\x01u" . ($caseInsensitive ? 'i' : '');
+		$regexp = "\x01^(?:$pattern)$\x01Du" . ($caseInsensitive ? 'i' : '');
 		foreach (static::toArray($control->getValue()) as $item) {
 			$value = $item instanceof Nette\Http\FileUpload ? $item->getName() : $item;
 			if (!Strings::match((string) $value, $regexp)) {
@@ -275,7 +284,9 @@ class Validator
 	 */
 	public static function validateNumeric(IControl $control): bool
 	{
-		return (bool) Strings::match($control->getValue(), '#^\d+\z#');
+		$value = $control->getValue();
+		return (is_int($value) && $value >= 0)
+			|| (is_string($value) && Strings::match($value, '#^\d+$#D'));
 	}
 
 
@@ -284,10 +295,11 @@ class Validator
 	 */
 	public static function validateInteger(IControl $control): bool
 	{
-		if (Validators::isNumericInt($value = $control->getValue())) {
-			if (!is_float($tmp = $value * 1)) { // bigint leave as string
-				$control->setValue($tmp);
-			}
+		if (
+			Validators::isNumericInt($value = $control->getValue())
+			&& !is_float($tmp = $value * 1) // too big for int?
+		) {
+			$control->setValue($tmp);
 			return true;
 		}
 		return false;

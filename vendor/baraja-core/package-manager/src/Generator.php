@@ -9,25 +9,19 @@ use Baraja\PackageManager\Exception\PackageDescriptorCompileException;
 use Baraja\PackageManager\Exception\PackageDescriptorException;
 use Composer\Autoload\ClassLoader;
 use Nette\Neon\Neon;
-use Nette\Utils\Strings;
 
-class Generator
+final class Generator
 {
 
-	/**
-	 * @var string
-	 */
+	/** @var string */
 	private $projectRoot;
 
-	/**
-	 * @var string[]
-	 */
+	/** @var string[] */
 	private $customPackagesNamePatterns;
 
-	/**
-	 * @var Storage
-	 */
+	/** @var Storage */
 	private $storage;
+
 
 	/**
 	 * @param string $projectRoot
@@ -41,24 +35,22 @@ class Generator
 		$this->storage = $storage;
 	}
 
+
 	/**
 	 * @internal
 	 * @return PackageDescriptorEntity
 	 * @throws PackageDescriptorException
 	 */
-	public function generate(): PackageDescriptorEntity
+	public function run(): PackageDescriptorEntity
 	{
 		$packageDescriptor = new PackageDescriptorEntity($this->customPackagesNamePatterns);
 
 		$composerJson = $this->storage->haystackToArray(
-			json_decode(
-				(string) file_get_contents($this->projectRoot . '/composer.json')
-			)
+			json_decode((string) file_get_contents($this->projectRoot . '/composer.json'))
 		);
 
-		$packages = $this->getPackages($composerJson);
 		$packageDescriptor->setComposer($composerJson);
-		$packageDescriptor->setPackages($packages);
+		$packageDescriptor->setPackages($packages = $this->getPackages($composerJson));
 
 		$customRouters = [];
 		$afterInstallScripts = [];
@@ -83,9 +75,10 @@ class Generator
 		return $packageDescriptor;
 	}
 
+
 	/**
 	 * @param string[][] $composer
-	 * @return string[][]
+	 * @return mixed[]
 	 * @throws PackageDescriptorException
 	 */
 	private function getPackages(array $composer): array
@@ -98,67 +91,72 @@ class Generator
 			$packagesVersions = [];
 		}
 
-		$allPackages = array_merge(
-			$composer['require'],
-			$packagesVersions
-		);
+		$packageDirs = array_merge($composer['require'], $packagesVersions);
 
-		foreach ($allPackages as $packageName => $dependency) {
-			$packageName = Strings::lower($packageName);
-			$path = $this->projectRoot . '/vendor/' . $packageName;
+		// Find other packages
+		foreach (new \DirectoryIterator($this->projectRoot . '/vendor') as $vendorNamespace) {
+			if ($vendorNamespace->isDir() === true && ($namespace = $vendorNamespace->getFilename()) !== '.' && $namespace !== '..') {
+				foreach (new \DirectoryIterator($this->projectRoot . '/vendor/' . $namespace) as $packageName) {
+					if ($packageName->isDir() === true && ($name = $packageName->getFilename()) !== '.' && $name !== '..'
+						&& isset($packageDirs[$package = $namespace . '/' . $name]) === false
+					) {
+						$packageDirs[$package] = '*';
+					}
+				}
+			}
+		}
 
-			if (!is_dir($path)) {
+		foreach ($packageDirs as $name => $dependency) {
+			if (is_dir($path = $this->projectRoot . '/vendor/' . ($name = mb_strtolower($name, 'UTF-8'))) === false) {
 				continue;
 			}
 
 			$configPath = null;
-			if (\is_file($path . '/common.neon')) {
+			if (\is_file($path . '/common.neon') === true) {
 				$configPath = $path . '/common.neon';
-			} elseif (\is_file($path . '/config.neon')) {
+			}
+
+			if (\is_file($path . '/config.neon') === true) {
+				if ($configPath !== null) {
+					throw new \RuntimeException('Can not use multiple config files. Please merge "' . $configPath . '" and "config.neon" to "common.neon".');
+				}
+				trigger_error('File "config.neon" is deprecated for Nette 3.0, please use "common.neon" for path: "' . $path . '".');
 				$configPath = $path . '/config.neon';
 			}
 
-			$composerPath = $path . '/composer.json';
-
-			if (is_file($composerPath) && json_decode(file_get_contents($composerPath)) === null) {
-				PackageDescriptorCompileException::composerJsonIsBroken($packageName);
+			if (is_file($composerPath = $path . '/composer.json') && json_decode(file_get_contents($composerPath)) === null) {
+				PackageDescriptorCompileException::composerJsonIsBroken($name);
 			}
 
-			$item = [
-				'name' => $packageName,
-				'version' => $packagesVersions[$packageName] ?? null,
+			$packages[] = [
+				'name' => $name,
+				'version' => $packagesVersions[$name] ?? null,
 				'dependency' => $dependency,
 				'config' => $configPath !== null ? $this->formatConfigSections($configPath) : null,
 				'composer' => is_file($composerPath)
-					? $this->storage->haystackToArray(
-						json_decode(
-							file_get_contents($composerPath)
-						)
-					) : null,
+					? $this->storage->haystackToArray(json_decode(file_get_contents($composerPath)))
+					: null,
 			];
-
-			$packages[] = $item;
 		}
 
 		return $packages;
 	}
 
+
 	/**
 	 * @param string $path
-	 * @return string[]
+	 * @return string[]|string[][]|mixed[][]
 	 */
 	private function formatConfigSections(string $path): array
 	{
 		$return = [];
-		$neon = Neon::decode(file_get_contents($path));
 
-		foreach (\is_array($neon) ? $neon : [] as $part => $haystack) {
+		foreach (\is_array($neon = Neon::decode(file_get_contents($path))) ? $neon : [] as $part => $haystack) {
 			if ($part === 'services') {
 				$servicesList = '';
 
-				foreach ($haystack as $serviceKey => $serviceClass) {
-					$servicesList .= (\is_int($serviceKey) ? '- ' : $serviceKey . ': ')
-						. Neon::encode($serviceClass) . "\n";
+				foreach ($haystack as $key => $serviceClass) {
+					$servicesList .= (\is_int($key) ? '- ' : $key . ': ') . Neon::encode($serviceClass) . "\n";
 				}
 
 				$return[$part] = [
@@ -176,6 +174,7 @@ class Generator
 		return $return;
 	}
 
+
 	/**
 	 * @return string[]
 	 * @throws PackageDescriptorCompileException
@@ -192,7 +191,7 @@ class Generator
 				$lockFile = null;
 			}
 
-			if (!is_file($lockFile)) {
+			if (is_file($lockFile) === false) {
 				PackageDescriptorCompileException::canNotLoadComposerLock($lockFile);
 			}
 
@@ -210,5 +209,4 @@ class Generator
 
 		return $return;
 	}
-
 }

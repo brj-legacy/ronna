@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace Nette\Bridges\HttpDI;
 
 use Nette;
-use Nette\PhpGenerator\Helpers;
 use Nette\Schema\Expect;
 
 
@@ -32,7 +31,7 @@ class HttpExtension extends Nette\DI\CompilerExtension
 	public function getConfigSchema(): Nette\Schema\Schema
 	{
 		return Expect::structure([
-			'proxy' => Expect::arrayOf('string')->dynamic(),
+			'proxy' => Expect::anyOf(Expect::arrayOf('string'), Expect::string()->castTo('array'))->default([])->dynamic(),
 			'headers' => Expect::arrayOf('scalar|null')->default([
 				'X-Powered-By' => 'Nette Framework 3',
 				'Content-Type' => 'text/html; charset=utf-8',
@@ -56,7 +55,7 @@ class HttpExtension extends Nette\DI\CompilerExtension
 			->addSetup('setProxy', [$config->proxy]);
 
 		$builder->addDefinition($this->prefix('request'))
-			->setFactory('@Nette\Http\RequestFactory::createHttpRequest');
+			->setFactory('@Nette\Http\RequestFactory::fromGlobals');
 
 		$response = $builder->addDefinition($this->prefix('response'))
 			->setFactory(Nette\Http\Response::class);
@@ -73,16 +72,15 @@ class HttpExtension extends Nette\DI\CompilerExtension
 			$builder->addAlias('httpRequest', $this->prefix('request'));
 			$builder->addAlias('httpResponse', $this->prefix('response'));
 		}
+
+		if (!$this->cliMode) {
+			$this->sendHeaders();
+		}
 	}
 
 
-	public function afterCompile(Nette\PhpGenerator\ClassType $class)
+	private function sendHeaders()
 	{
-		if ($this->cliMode) {
-			return;
-		}
-
-		$initialize = $class->getMethod('initialize');
 		$config = $this->config;
 		$headers = array_map('strval', $config->headers);
 
@@ -96,14 +94,13 @@ class HttpExtension extends Nette\DI\CompilerExtension
 			$headers['X-Frame-Options'] = $frames;
 		}
 
-		$code = [];
 		foreach (['csp', 'cspReportOnly'] as $key) {
 			if (empty($config->$key)) {
 				continue;
 			}
 			$value = self::buildPolicy($config->$key);
 			if (strpos($value, "'nonce'")) {
-				$code[0] = '$cspNonce = base64_encode(random_bytes(16));';
+				$this->initialization->addBody('$cspNonce = base64_encode(random_bytes(16));');
 				$value = Nette\DI\ContainerBuilder::literal(
 					'str_replace(?, ? . $cspNonce, ?)',
 					["'nonce", "'nonce-", $value]
@@ -116,16 +113,14 @@ class HttpExtension extends Nette\DI\CompilerExtension
 			$headers['Feature-Policy'] = self::buildPolicy($config->featurePolicy);
 		}
 
-		$code[] = Helpers::formatArgs('$response = $this->getService(?);', [$this->prefix('response')]);
+		$this->initialization->addBody('$response = $this->getService(?);', [$this->prefix('response')]);
 		foreach ($headers as $key => $value) {
 			if ($value !== '') {
-				$code[] = Helpers::formatArgs('$response->setHeader(?, ?);', [$key, $value]);
+				$this->initialization->addBody('$response->setHeader(?, ?);', [$key, $value]);
 			}
 		}
 
-		$code[] = Helpers::formatArgs('$response->setCookie(...?);', [['nette-samesite', '1', 0, '/', null, null, true, 'Strict']]);
-
-		$initialize->addBody("(function () {\n\t" . implode("\n\t", $code) . "\n})();");
+		$this->initialization->addBody('$response->setCookie(...?);', [['nette-samesite', '1', 0, '/', null, null, true, 'Strict']]);
 	}
 
 
@@ -140,7 +135,10 @@ class HttpExtension extends Nette\DI\CompilerExtension
 			$policy = $policy === true ? [] : (array) $policy;
 			$value .= $type;
 			foreach ($policy as $item) {
-				$value .= !isset($nonQuoted[$type]) && preg_match('#^[a-z-]+\z#', $item) ? " '$item'" : " $item";
+				if (is_array($item)) {
+					$item = key($item) . ':';
+				}
+				$value .= !isset($nonQuoted[$type]) && preg_match('#^[a-z-]+$#D', $item) ? " '$item'" : " $item";
 			}
 			$value .= '; ';
 		}

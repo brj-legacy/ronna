@@ -5,84 +5,101 @@ declare(strict_types=1);
 namespace Baraja\PackageManager;
 
 
-use Baraja\PackageManager\Composer\AssetsFromPackageTask;
-use Baraja\PackageManager\Composer\ClearCacheTask;
-use Baraja\PackageManager\Composer\ComposerJsonTask;
-use Baraja\PackageManager\Composer\ConfigLocalNeonTask;
+use Baraja\PackageManager\Composer\CompanyIdentity;
 use Baraja\PackageManager\Composer\ITask;
 use Baraja\PackageManager\Exception\TaskException;
 
-class InteractiveComposer
+final class InteractiveComposer
 {
 
-	/**
-	 * @var string[]
-	 */
-	private static $tasks = [
-		ConfigLocalNeonTask::class,
-		AssetsFromPackageTask::class,
-		ComposerJsonTask::class,
-		ClearCacheTask::class,
-	];
-
-	/**
-	 * @var PackageRegistrator
-	 */
+	/** @var PackageRegistrator */
 	private $packageRegistrator;
+
 
 	public function __construct(PackageRegistrator $packageRegistrator)
 	{
 		$this->packageRegistrator = $packageRegistrator;
 	}
 
-	/**
-	 * Class must implement ITask.
-	 *
-	 * @param string $taskClass
-	 */
-	public static function addTask(string $taskClass): void
-	{
-		self::$tasks[] = $taskClass;
-	}
 
 	public function run(): void
 	{
-		$errorTasks = [];
-
-		foreach (self::$tasks as $task) {
+		foreach ($this->getTasks() as $taskClass) {
 			echo "\n" . str_repeat('-', 100) . "\n";
 
-			/** @var ITask $taskInstance */
-			$taskInstance = new $task($this->packageRegistrator);
+			/** @var ITask $task */
+			$task = new $taskClass($this->packageRegistrator);
 
-			echo "\e[0;32;40m" . '🍏 Task: ' . $taskInstance->getName() . "\e[0m\n";
+			echo "\e[0;32;40m" . '🍏 Task: ' . $task->getName() . "\e[0m\n";
 
 			try {
-				if ($taskInstance->run() === true) {
+				if ($task->run() === true) {
 					echo "\n\n" . '👍 ' . "\e[1;33;40m" . 'Task was successful. 👍' . "\e[0m";
 				} else {
-					$errorTasks[] = $task;
-					echo "\n\n" . 'Task error.';
+					echo "\n\n";
+					Helpers::terminalRenderError('Task "' . $taskClass . '" failed!');
+					echo "\n\n";
+					die;
 				}
-			} catch (TaskException $e) {
-				$errorTasks[] = $task;
-				echo "\n\n" . 'Task error (' . $e->getMessage() . ').';
+			} catch (TaskException | \RuntimeException $e) {
+				echo "\n\n";
+				Helpers::terminalRenderError('Task "' . $taskClass . '" failed!' . "\n\n" . $e->getMessage());
+				echo "\n\n";
+				die;
 			}
 		}
 
-		echo "\n" . str_repeat('-', 100) . "\n\n\n";
-
-		if (\count($errorTasks) > 0) {
-			echo 'Error tasks:' . "\n\n";
-
-			foreach ($errorTasks as $errorTask) {
-				echo '- ' . $errorTask . "\n";
-			}
-		} else {
-			echo 'All tasks was OK.';
-		}
-
-		echo "\n\n\n";
+		echo "\n" . str_repeat('-', 100) . "\n\n\n" . 'All tasks was OK.' . "\n\n\n";
 	}
 
+
+	/**
+	 * @return string[]
+	 */
+	private function getTasks(): array
+	{
+		$return = [];
+		echo 'Indexing classes...' . "\n";
+
+		foreach (array_keys(ClassMapGenerator::createMap($this->packageRegistrator->getProjectRoot())) as $className) {
+			if (\is_string($className) === false) {
+				throw new \RuntimeException('Class name must be type of string, but type "' . \gettype($className) . '" given.');
+			}
+
+			if (preg_match('/^[A-Z0-9].*Task$/', $className)) {
+				try {
+					$ref = new \ReflectionClass($className);
+					if ($ref->isInterface() === false && $ref->isAbstract() === false && $ref->implementsInterface(ITask::class) === true) {
+						$return[$className] = [
+							$className,
+							($doc = $ref->getDocComment()) !== false && preg_match('/Priority:\s*(\d+)/', $doc, $docParser) ? (int) $docParser[1] : 10,
+						];
+					}
+				} catch (\ReflectionException $e) {
+				}
+			}
+
+			if (preg_match('/^[A-Z0-9].*Identity/', $className)) {
+				try {
+					$ref = new \ReflectionClass($className);
+					if ($ref->isInterface() === false && $ref->isAbstract() === false && $ref->implementsInterface(CompanyIdentity::class) === true) {
+						/** @var CompanyIdentity $identity */
+						$identity = $ref->newInstance();
+
+						echo $identity->getLogo() . "\n" . str_repeat('-', 100) . "\n";
+					}
+				} catch (\ReflectionException $e) {
+				}
+			}
+		}
+		echo "\n";
+
+		usort($return, static function (array $a, array $b): int {
+			return $a[1] < $b[1] ? 1 : -1;
+		});
+
+		return array_map(static function (array $haystack): string {
+			return $haystack[0];
+		}, $return);
+	}
 }

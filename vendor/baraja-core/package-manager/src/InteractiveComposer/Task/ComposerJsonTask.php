@@ -12,10 +12,11 @@ use Nette\Utils\Json;
 use Nette\Utils\JsonException;
 use Nette\Utils\Strings;
 
-class ComposerJsonTask extends BaseTask
+/**
+ * Priority: 300
+ */
+final class ComposerJsonTask extends BaseTask
 {
-
-	private const PRIORITY_PREFIX = 'baraja-';
 
 	/**
 	 * @return bool
@@ -24,9 +25,7 @@ class ComposerJsonTask extends BaseTask
 	 */
 	public function run(): bool
 	{
-		$path = $this->packageRegistrator->getProjectRoot() . '/composer.json';
-
-		if (is_file($path) === false) {
+		if (is_file($path = $this->packageRegistrator->getProjectRoot() . '/composer.json') === false) {
 			Helpers::terminalRenderError('Project composer.json does not exist! ' . $path);
 
 			return false;
@@ -48,7 +47,7 @@ class ComposerJsonTask extends BaseTask
 		}
 
 		foreach ($require as $dependency => $version) {
-			if (Strings::startsWith($dependency, self::PRIORITY_PREFIX)
+			if (Strings::startsWith($dependency, 'baraja-')
 				&& preg_match('/^\D+(?<mainVersion>\d+)\./', $version, $versionParser)
 			) {
 				$require[$dependency] = '~' . $versionParser['mainVersion'] . '.0';
@@ -65,6 +64,7 @@ class ComposerJsonTask extends BaseTask
 		return true;
 	}
 
+
 	/**
 	 * @return string
 	 */
@@ -72,6 +72,7 @@ class ComposerJsonTask extends BaseTask
 	{
 		return 'Composer.json fixer';
 	}
+
 
 	/**
 	 * @return string[]
@@ -81,10 +82,7 @@ class ComposerJsonTask extends BaseTask
 	{
 		$return = [];
 
-		$packages = $this->packageRegistrator->getPackageDescriptorEntity()
-			->getPackagest(false);
-
-		foreach ($packages as $package) {
+		foreach ($this->packageRegistrator->getPackageDescriptorEntity()->getPackagest(false) as $package) {
 			$path = $this->packageRegistrator->getProjectRoot() . '/vendor/' . $package->getName() . '/composer.json';
 			$composer = is_file($path) ? Json::decode(FileSystem::read($path), Json::FORCE_ARRAY) : [];
 			if (isset($composer['require'])) {
@@ -98,5 +96,4 @@ class ComposerJsonTask extends BaseTask
 
 		return array_keys($return);
 	}
-
 }

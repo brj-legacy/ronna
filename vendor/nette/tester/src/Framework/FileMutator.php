@@ -117,8 +117,7 @@ class FileMutator
 	{
 		switch ($option) {
 			case STREAM_META_TOUCH:
-				$value += [null, null];
-				return $this->native('touch', $path, $value[0], $value[1]);
+				return $this->native('touch', $path, $value[0] ?? time(), $value[1] ?? time());
 			case STREAM_META_OWNER_NAME:
 			case STREAM_META_OWNER:
 				return $this->native('chown', $path, $value);
@@ -169,8 +168,9 @@ class FileMutator
 	}
 
 
-	public function stream_set_option(int $option, int $arg1, int $arg2)
+	public function stream_set_option(int $option, int $arg1, int $arg2): bool
 	{
+		return false;
 	}
 
 
@@ -192,7 +192,7 @@ class FileMutator
 	}
 
 
-	public function stream_write(string $data): int
+	public function stream_write(string $data)
 	{
 		return fwrite($this->handle, $data);
 	}

@@ -85,7 +85,7 @@ class Session
 
 		if (!session_id()) { // session is started for first time
 			$id = $this->request->getCookie(session_name());
-			$id = is_string($id) && preg_match('#^[0-9a-zA-Z,-]{22,256}\z#i', $id)
+			$id = is_string($id) && preg_match('#^[0-9a-zA-Z,-]{22,256}$#Di', $id)
 				? $id
 				: session_create_id();
 			session_id($id); // causes resend of a cookie
@@ -235,7 +235,7 @@ class Session
 	 */
 	public function setName(string $name)
 	{
-		if (!preg_match('#[^0-9.][^.]*\z#A', $name)) {
+		if (!preg_match('#[^0-9.][^.]*$#DA', $name)) {
 			throw new Nette\InvalidArgumentException('Session name cannot contain dot.');
 		}
 
@@ -370,7 +370,7 @@ class Session
 
 		foreach ($config as $key => $value) {
 			if (!isset($allowed["session.$key"])) {
-				$hint = substr((string) Nette\Utils\ObjectHelpers::getSuggestion(array_keys($allowed), "session.$key"), 8);
+				$hint = substr((string) Nette\Utils\Helpers::getSuggestion(array_keys($allowed), "session.$key"), 8);
 				[$altKey, $altHint] = array_map(function ($s) {
 					return preg_replace_callback('#_(.)#', function ($m) { return strtoupper($m[1]); }, $s); // snake_case -> camelCase
 				}, [$key, (string) $hint]);
@@ -401,9 +401,9 @@ class Session
 
 		if ($cookie !== $origCookie) {
 			if (PHP_VERSION_ID >= 70300) {
-				session_set_cookie_params($cookie);
+				@session_set_cookie_params($cookie); // @ may trigger warning when session is active since PHP 7.2
 			} else {
-				session_set_cookie_params(
+				@session_set_cookie_params( // @ may trigger warning when session is active since PHP 7.2
 					$cookie['lifetime'],
 					$cookie['path'] . (isset($cookie['samesite']) ? '; SameSite=' . $cookie['samesite'] : ''),
 					$cookie['domain'],
@@ -460,9 +460,7 @@ class Session
 	}
 
 
-	/**
-	 * @deprecated
-	 */
+	/** @deprecated */
 	public function getCookieParameters(): array
 	{
 		return session_get_cookie_params();

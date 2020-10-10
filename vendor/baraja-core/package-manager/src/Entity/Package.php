@@ -8,41 +8,31 @@ namespace Baraja\PackageManager;
 use Nette\Neon\Neon;
 use Nette\SmartObject;
 
-class Package
+final class Package
 {
-
 	use SmartObject;
 
-	/**
-	 * @var string
-	 */
+	/** @var string */
 	private $name;
 
-	/**
-	 * @var null|string
-	 */
+	/** @var string|null */
 	private $version;
 
-	/**
-	 * @var string
-	 */
+	/** @var string */
 	private $dependency;
 
-	/**
-	 * @var string[]
-	 */
+	/** @var string[][]|mixed[][][] */
 	private $config;
 
-	/**
-	 * @var mixed[]
-	 */
+	/** @var mixed[] */
 	private $composer;
+
 
 	/**
 	 * @param string $name
 	 * @param string|null $version
 	 * @param string $dependency
-	 * @param string[] $config
+	 * @param string[][]|mixed[][][] $config
 	 * @param mixed[] $composer
 	 */
 	public function __construct(string $name, ?string $version, string $dependency, array $config, array $composer)
@@ -54,6 +44,7 @@ class Package
 		$this->composer = $composer;
 	}
 
+
 	/**
 	 * @return string
 	 */
@@ -62,13 +53,15 @@ class Package
 		return $this->name;
 	}
 
+
 	/**
-	 * @return null|string
+	 * @return string|null
 	 */
 	public function getVersion(): ?string
 	{
 		return $this->version;
 	}
+
 
 	/**
 	 * @return string
@@ -78,13 +71,15 @@ class Package
 		return $this->dependency;
 	}
 
+
 	/**
-	 * @return string[]
+	 * @return string[][]|bool[][]|mixed[][][]
 	 */
 	public function getConfig(): array
 	{
 		return $this->config;
 	}
+
 
 	/**
 	 * @return mixed[]
@@ -94,46 +89,15 @@ class Package
 		return $this->composer;
 	}
 
-	/**
-	 * @return string[]
-	 */
-	public function getParameters(): array
-	{
-		return $this->getConfigProperty('parameters');
-	}
 
 	/**
-	 * @return string[]
-	 */
-	public function getServices(): array
-	{
-		return $this->getConfigProperty('services');
-	}
-
-	/**
-	 * @return string[]
-	 */
-	public function getRouters(): array
-	{
-		return $this->getConfigProperty('routers');
-	}
-
-	/**
-	 * @param string[] $parent
-	 * @return string[]
-	 */
-	public function getMenu(array $parent = []): array
-	{
-		return $parent !== [] ? $parent : $this->getConfigProperty('menu');
-	}
-
-	/**
+	 * @deprecated please use native implementation or DIC.
 	 * @param string $key
-	 * @return string[][]
+	 * @return mixed[]
 	 */
-	private function getConfigProperty(string $key): array
+	public function getConfigProperty(string $key): array
 	{
-		if (isset($this->getConfig()[$key])) {
+		if (isset($this->getConfig()[$key]) === true) {
 			if ($this->getConfig()[$key]['rewrite'] === true) {
 				return $this->getConfig()[$key]['data'];
 			}
@@ -143,5 +107,4 @@ class Package
 
 		return [];
 	}
-
 }

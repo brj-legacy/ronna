@@ -15,7 +15,7 @@ use Nette;
 /**
  * Access control list (ACL) functionality and privileges management.
  *
- * This solution is mostly based on Zend_Acl (c) Zend Technologies USA Inc. (http://www.zend.com), new BSD license
+ * This solution is mostly based on Zend_Acl (c) Zend Technologies USA Inc. (https://www.zend.com), new BSD license
  *
  * @copyright  Copyright (c) 2005, 2007 Zend Technologies USA Inc.
  */
@@ -105,12 +105,12 @@ class Permission implements IAuthorizator
 	 * Checks whether Role is valid and exists in the list.
 	 * @throws Nette\InvalidStateException
 	 */
-	private function checkRole(string $role, bool $throw = true): void
+	private function checkRole(string $role, bool $exists = true): void
 	{
 		if ($role === '') {
 			throw new Nette\InvalidArgumentException('Role must be a non-empty string.');
 
-		} elseif ($throw && !isset($this->roles[$role])) {
+		} elseif ($exists && !isset($this->roles[$role])) {
 			throw new Nette\InvalidStateException("Role '$role' does not exist.");
 		}
 	}
@@ -270,12 +270,12 @@ class Permission implements IAuthorizator
 	 * Checks whether Resource is valid and exists in the list.
 	 * @throws Nette\InvalidStateException
 	 */
-	private function checkResource(string $resource, bool $throw = true): void
+	private function checkResource(string $resource, bool $exists = true): void
 	{
 		if ($resource === '') {
 			throw new Nette\InvalidArgumentException('Resource must be a non-empty string.');
 
-		} elseif ($throw && !isset($this->resources[$resource])) {
+		} elseif ($exists && !isset($this->resources[$resource])) {
 			throw new Nette\InvalidStateException("Resource '$resource' does not exist.");
 		}
 	}
@@ -597,20 +597,17 @@ class Permission implements IAuthorizator
 						break;
 					}
 				}
-			} else {
-				if (($result = $this->getRuleType($resource, null, $privilege)) !== null) { // look for rule on 'allRoles' pseudo-parent
-					break;
-
-				} elseif (($result = $this->getRuleType($resource, null, null)) !== null) {
-					break;
-				}
+			} elseif (($result = $this->getRuleType($resource, null, $privilege)) !== null) { // look for rule on 'allRoles' pseudo-parent
+				break;
+			} elseif (($result = $this->getRuleType($resource, null, null)) !== null) {
+				break;
 			}
 
 			$resource = $this->resources[$resource]['parent']; // try next Resource
 		} while (true);
 
 		$this->queriedRole = $this->queriedResource = null;
-		return $result;
+		return $result ?? false;
 	}
 
 

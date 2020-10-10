@@ -22,7 +22,7 @@ use Nette;
  * @property-read array $cookies
  * @property-read string $method
  * @property-read array $headers
- * @property-read Url|null $referer
+ * @property-read UrlImmutable|null $referer
  * @property-read bool $secured
  * @property-read bool $ajax
  * @property-read string|null $remoteAddress
@@ -76,9 +76,7 @@ class Request implements IRequest
 	}
 
 
-	/**
-	 * @return static
-	 */
+	/** @return static */
 	public function withUrl(UrlScript $url)
 	{
 		$dolly = clone $this;

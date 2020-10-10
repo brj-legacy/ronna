@@ -14,7 +14,7 @@ use Nette\Utils\Strings;
 
 
 /**
- * Current HTTP request factory.
+ * HTTP request factory.
  */
 class RequestFactory
 {
@@ -26,7 +26,7 @@ class RequestFactory
 	/** @var array */
 	public $urlFilters = [
 		'path' => ['#/{2,}#' => '/'], // '%20' => ''
-		'url' => [], // '#[.,)]\z#' => ''
+		'url' => [], // '#[.,)]$#D' => ''
 	];
 
 	/** @var bool */
@@ -36,9 +36,7 @@ class RequestFactory
 	private $proxies = [];
 
 
-	/**
-	 * @return static
-	 */
+	/** @return static */
 	public function setBinary(bool $binary = true)
 	{
 		$this->binary = $binary;
@@ -58,9 +56,9 @@ class RequestFactory
 
 
 	/**
-	 * Creates current HttpRequest object.
+	 * Returns new Request instance, using values from superglobals.
 	 */
-	public function createHttpRequest(): Request
+	public function fromGlobals(): Request
 	{
 		$url = new Url;
 		$this->getServer($url);
@@ -91,7 +89,7 @@ class RequestFactory
 
 		if (
 			(isset($_SERVER[$tmp = 'HTTP_HOST']) || isset($_SERVER[$tmp = 'SERVER_NAME']))
-			&& preg_match('#^([a-z0-9_.-]+|\[[a-f0-9:]+\])(:\d+)?\z#i', $_SERVER[$tmp], $pair)
+			&& preg_match('#^([a-z0-9_.-]+|\[[a-f0-9:]+\])(:\d+)?$#Di', $_SERVER[$tmp], $pair)
 		) {
 			$url->setHost(strtolower($pair[1]));
 			if (isset($pair[2])) {
@@ -147,7 +145,7 @@ class RequestFactory
 		$cookies = $useFilter ? filter_input_array(INPUT_COOKIE, FILTER_UNSAFE_RAW) : (empty($_COOKIE) ? [] : $_COOKIE);
 
 		// remove invalid characters
-		$reChars = '#^[' . self::CHARS . ']*+\z#u';
+		$reChars = '#^[' . self::CHARS . ']*+$#Du';
 		if (!$this->binary) {
 			$list = [&$query, &$post, &$cookies];
 			foreach ($list as $key => &$val) {
@@ -174,7 +172,7 @@ class RequestFactory
 
 	private function getFiles(): array
 	{
-		$reChars = '#^[' . self::CHARS . ']*+\z#u';
+		$reChars = '#^[' . self::CHARS . ']*+$#Du';
 		$files = [];
 		$list = [];
 		foreach ($_FILES ?? [] as $k => $v) {
@@ -246,7 +244,7 @@ class RequestFactory
 		$method = $_SERVER['REQUEST_METHOD'] ?? null;
 		if (
 			$method === 'POST'
-			&& preg_match('#^[A-Z]+\z#', $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ?? '')
+			&& preg_match('#^[A-Z]+$#D', $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ?? '')
 		) {
 			$method = $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'];
 		}
@@ -277,7 +275,7 @@ class RequestFactory
 	{
 		$forwardParams = preg_split('/[,;]/', $_SERVER['HTTP_FORWARDED']);
 		foreach ($forwardParams as $forwardParam) {
-			[$key, $value] = explode('=', $forwardParam, 2) + [1 => null];
+			[$key, $value] = explode('=', $forwardParam, 2) + [1 => ''];
 			$proxyParams[strtolower(trim($key))][] = trim($value, " \t\"");
 		}
 
@@ -333,8 +331,10 @@ class RequestFactory
 					return filter_var(trim($ip), FILTER_VALIDATE_IP) !== false && Helpers::ipMatch(trim($ip), $proxy);
 				});
 			});
-			$remoteAddr = trim(end($xForwardedForWithoutProxies));
-			$xForwardedForRealIpKey = key($xForwardedForWithoutProxies);
+			if ($xForwardedForWithoutProxies) {
+				$remoteAddr = trim(end($xForwardedForWithoutProxies));
+				$xForwardedForRealIpKey = key($xForwardedForWithoutProxies);
+			}
 		}
 
 		if (isset($xForwardedForRealIpKey) && !empty($_SERVER['HTTP_X_FORWARDED_HOST'])) {
@@ -344,5 +344,12 @@ class RequestFactory
 				$url->setHost($remoteHost);
 			}
 		}
+	}
+
+
+	/** @deprecated */
+	public function createHttpRequest(): Request
+	{
+		return $this->fromGlobals();
 	}
 }
